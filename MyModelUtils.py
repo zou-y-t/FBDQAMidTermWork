@@ -285,7 +285,7 @@ class SpecialData:
         然后对于指定证券按模型分析
 
         Returns:
-        return() None
+        return(dictionary) metric
         返回相关metric
         """
         df = self.df.copy()
