@@ -210,6 +210,13 @@ class SpecialData:
     用于处理和获取特殊数据
     波动率高/成交高的 股票
     重要日期的实现
+
+    Args:
+    parameter1(int):description
+    parameter2:(string):description
+    Returns:
+    return1(pd.Dataframe):description(contains columns and index)
+    return2(list):description
     """
 
     def __init__(self, df):
@@ -218,12 +225,27 @@ class SpecialData:
         self.start_date = self.df["date"][0]
         self.end_date = self.df["date"][-1]
         # self.special_days = [] 目前未确定哪些特殊日期
+        self.params = {
+            "GDP": "2023-01-02",
+            "CPI": "2020-04-01",
+            # 仅为测试实例数据
+        }
 
     def getHiVOL(self, standard=None):
         """
         获取高成交量的股票
-        如果不输入standard,默认在df中排序，前5%
+        Args:
+        param1(int Optional) standard
+        description:
+        如果不输入standard,默认在df中排序,前5%
         如果输入standard就按照比standard高筛选
+
+        Returns:
+        return(DataFrame) sorted_df
+        description:
+        返回 VOL由高到低的 df
+        columns:'volume'
+
         """
         filtered_df = self.df.copy()
         if standard is None:
@@ -239,18 +261,41 @@ class SpecialData:
     def getHiVot(self, standard=None):
         """
         获取高波动率的股票
-        如果不输入standard,默认在df中排序，前5%
-        如果输入standard就按照比standard高筛选
+        Args:
+        param1(int Optional) standard
+        description:
+        不输入standard,默认在df中排序,前5%
+        输入standard就按照比standard高筛选
+
+        Returns:
+        return(DataFrame) None
         ** 如何获取波动率？ 日内数据？ **
         """
 
         return self.df
 
-    def getDays(self, Model=None, security_code=None):
+    def getDays(self, Model, security_code=None):
         """
         获取特殊日期的模型结果
-        需要输入模型，证券代码
-        然后对于指定证券进行分析
-        返回目前未确定
+        Args:
+        param1(model) Model
+        param2(security_code) code
+        description:
+        输入模型/证券代码
+        然后对于指定证券按模型分析
+
+        Returns:
+        return() None
+        返回相关metric
         """
-        return None
+        df = self.df.copy()
+        date_data = df.loc[(df["date"] == self.params["GDP"])]
+        result = Model(date_data)
+        result.fit()
+        beta = result.getBeta()
+        alpha = result.getAlpha()
+        R2 = result.getR2()
+
+        metric = {"alpha": alpha, "beta": beta, "R2": R2}
+
+        return metric
