@@ -127,10 +127,9 @@ class DataCleaner:
         "15:00:00",
     ]
 
-    def __init__(self, df, security_code):
-        """df是数据,security_code是股票代码"""
+    def __init__(self, df):
+        """df是数据"""
         self.df = df
-        self.code = security_code
         self.df["date"] = pd.to_datetime(self.df["date"])
         self.start_date = self.df["date"][0]
         self.end_date = self.df["date"][-1]
@@ -157,12 +156,24 @@ class DataCleaner:
 
     def st_quit(self):
         """删除ST股票/退市股票"""
+        """目前函数只在平台上API可用(get_extras)"""
+        names_to_drop = []
+        for name in self.df["name"]:
+            st_df = get_extras(
+                "is_st", name, start_date=self.start_date, end_date=self.end_date
+            )
+            if not st_df["is_st"] == False.all():
+                # 某一天被ST了
+                names_to_drop.append(name)
+
+        self.df = self.df[~self.df["name"].isin(names_to_drop)]
 
     def pause(self):
         """对于涨跌停处理"""
 
     def ignore(self):
         """缺失的数据"""
+        self.df = self.df.dropna()
 
     def clean(self):
         # 去除半小时结点的数据
