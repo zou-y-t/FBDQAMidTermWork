@@ -47,10 +47,12 @@
 - 结合`stockDateData.csv`进行NLP,将每一天的信息进行处理，构建随机森林分类器，分析金融文字信息对于线性拟合度好坏的贡献
 ### 结果
 - 前向
+
 ![alt text](image/image-2.png)
 
 ![alt text](image/image-3.png)
 - 后向
+
 ![alt text](image/image-4.png)
 
 ### 分析
