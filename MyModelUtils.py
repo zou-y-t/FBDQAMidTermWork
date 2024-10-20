@@ -127,13 +127,18 @@ class DataCleaner:
         "15:00:00",
     ]
 
-    def __init__(self, df, security_codes):
-        """df是数据"""
+    def __init__(self, df, security_code=None):
+        """
+        Args:
+            df: 股票数据
+            security_code(Optional): 股票代码 
+
+        """
         self.df = df
         self.df["date"] = pd.to_datetime(self.df["date"])
         self.start_date = self.df["date"][0]
         self.end_date = self.df["date"][-1]
-        self.security = security_codes
+        self.security = security_code
         self.r1, self.r2, self.r3, self.r4, self.r5, self.r6, self.r7, self.r8 = (
             [],
             [],
@@ -156,18 +161,28 @@ class DataCleaner:
         ]
 
     def st_quit(self):
-        """删除ST股票/退市股票"""
-        """目前函数只在平台上API可用(get_extras)"""
-        names_to_drop = []
+        """
+        删除ST股票/退市股票
+        Args:
+            None
+        Return:
+            Boolean(True or False)
+            True: 存在异常
+            False: 无异常
+        
+        """
+        if self.security is None:
+            return False
+        
         for name in self.security:
             st_df = get_extras(
                 "is_st", name, start_date=self.start_date, end_date=self.end_date
             )
             if not st_df["is_st"] == False.all():
                 # 某一天被ST了
-                names_to_drop.append(name)
-
-        self.df = self.df[~self.df["name"].isin(names_to_drop)]
+                return True
+            
+        return False
 
     def pause(self):
         """对于涨跌停处理"""
@@ -177,6 +192,9 @@ class DataCleaner:
         self.df = self.df.dropna()
 
     def clean(self):
+        """
+        进行数据清理
+        """
         # 去除半小时结点的数据
         self.df = self.df[
             self.df["date"].dt.time.astype(str).isin(self.half_hour_time)
@@ -221,9 +239,9 @@ class WeightRestore:
     """
     对于某一支股票在一段时间内进行复权
     Args:
-    security:股票代码
-    start_date:起始日期
-    end_date:终止日期
+        security:股票代码
+        start_date:起始日期
+        end_date:终止日期
     """
 
     def __init__(self, security, start_date, end_date):
@@ -232,14 +250,17 @@ class WeightRestore:
         self.end_date = end_date
 
     def getResult(self):
+        """
+        获取复权结束后的结果
+        Returns:
+            pd.DataFrame: columns: "close","open","date","is_st"
+        """
         bars = get_bars(self.security, self.start_date, self.end_date, unit="1d")
         close = bars["close"]
         fq_factors = get_adj_factors(
             self.security, self.start_date, self.end_date, fq="pre"
         )
 
-        # print(fq_factors)
-        # 对收盘价做前复权
         fq_close = self.calc_fq(close, fq_factors)
         is_st = get_extras("is_st", self.security, self.start_date, self.end_date)
         limit = get_limit_price(self.security, self.start_date, self.end_date)
@@ -260,10 +281,13 @@ class WeightRestore:
 
     def cal_fq(close, fq_factors):
         """
-        获取复权[前复权]数据
-        :param close: 收盘价序列
-        :param fq_factors:  DataFrame类型: 复权因子序列
-        :return: Series类型, 复权后的收盘价序列
+        获取复权[前复权]数据(在getResult中调用,无需在外部调用)
+        Args:
+            param close: 收盘价序列
+            param fq_factors:  DataFrame类型: 复权因子序列
+        
+        Returns:
+            Series类型, 复权后的收盘价序列
         """
 
         if type(fq_factors) == pd.DataFrame and len(fq_factors) > 0:
@@ -288,92 +312,84 @@ class SpecialData:
     用于处理和获取特殊数据
     波动率高/成交高的 股票
     重要日期的实现
-
-    Args:
-    parameter1(int):description
-    parameter2:(string):description
-    Returns:
-    return1(pd.Dataframe):description(contains columns and index)
-    return2(list):description
     """
 
-    def __init__(self, df):
+    def __init__(self, df, date):
+        """
+        Args:
+            param1 df : columns:"volume","name","date","price"
+            param2 date : time(date)
+        """
         self.df = df
-        self.df["date"] = pd.to_datetime(self.df["date"])
-        self.start_date = self.df["date"][0]
-        self.end_date = self.df["date"][-1]
-        # self.special_days = [] 目前未确定哪些特殊日期
-        self.params = {
-            "GDP": "2023-01-02",
-            "CPI": "2020-04-01",
-            # 仅为测试实例数据
-        }
+        self.date = pd.to_datetime(date)
 
-    def getHiVOL(self, standard=None):
+    def getHiVOL(self, standard=None, percentage=None):
         """
         获取高成交量的股票
         Args:
-        param1(int Optional) standard
-        description:
-        如果不输入standard,默认在df中排序,前5%
-        如果输入standard就按照比standard高筛选
+            param1(int Optional) standard:不输入standard,默认在df中排序,前5% 
+            param2(float Optional) percentage:输入percentage,按照前percentage筛选
 
         Returns:
-        return(DataFrame) sorted_df
-        description:
-        返回 VOL由高到低的 df
-        columns:'volume'
+            return(DataFrame) sorted_df
+            description:
+            返回 VOL由高到低的 df
+            columns:'volume'
+            columns:'name'
 
         """
         filtered_df = self.df.copy()
-        if standard is None:
-            filtered_df = filtered_df[filtered_df["volume"] > standard]
+        if percentage is None:
+            if standard is None:
+                filtered_df = filtered_df[filtered_df["volume"] > standard]
+            else:
+                threshold = self.df["volume"].quantile(0.95)
+                filtered_df = filtered_df[filtered_df["volume"] > threshold]
         else:
-            threshold = self.df["volume"].quantile(0.95)
+            threshold = self.df["volume"].quantile(1-percentage)
             filtered_df = filtered_df[filtered_df["volume"] > threshold]
 
         sorted_df = filtered_df.sort_values(by="volume", ascending=False)
 
         return sorted_df
-
-    def getHiVot(self, standard=None):
-        """
-        获取高波动率的股票
-        Args:
-        param1(int Optional) standard
-        description:
-        不输入standard,默认在df中排序,前5%
-        输入standard就按照比standard高筛选
-
-        Returns:
-        return(DataFrame) None
-        ** 如何获取波动率？ 日内数据？ **
-        """
-
-        return self.df
-
-    def getDays(self, Model, security_code=None):
+    
+    def getDays(self, security_code=None, r1, r7=None, r8):
         """
         获取特殊日期的模型结果
         Args:
-        param1(model) Model
-        param2(security_code) code
-        description:
-        输入模型/证券代码
-        然后对于指定证券按模型分析
+            param1: security_code (str, optional): 证券代码
+            param2: r1 (float): 参数1
+            param3: r7 (float, optional): 参数7
+            param4: r8 (float): 参数8
 
         Returns:
-        return(dictionary) metric
-        返回相关metric
+            pd.DataFrame: columns:date、alpha、beta、R2、err、security_code(Optional)
         """
-        df = self.df.copy()
-        date_data = df.loc[(df["date"] == self.params["GDP"])]
-        result = Model(date_data)
+        results = []
+        # 输入df - 返回损失率
+        for date in self.dates:
+            df = self.df.copy()
+            date_data = df.loc[(df["date"] == date)]
+            if r7 is None:
+                result = Model1(date_data, r8=r8, r1=r1)
+                predictions = result.predict(r1=r1)
+            else:
+                result = Model2(date_data, r1=r1, r7=r7, r8=r8)
+                predictions = result.predict(r1=r1,r7=r7)
+
         result.fit()
         beta = result.getBeta()
         alpha = result.getAlpha()
         R2 = result.getR2()
 
-        metric = {"alpha": alpha, "beta": beta, "R2": R2}
 
-        return metric
+        actuals = r8 
+        error = (abs(predictions - actuals)).mean()  # 误差
+
+        metric = {"date": date, "alpha": alpha, "beta": beta, "R2": R2, "security_code": security_code, "error": error}
+        if security_code is None:
+            metric["security_code"] = security_code
+        
+        results.append(metric)
+
+        return pd.DataFrame(results)
