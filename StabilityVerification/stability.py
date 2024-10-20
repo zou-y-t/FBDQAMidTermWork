@@ -40,3 +40,8 @@ class IfR1Positive:
             return True
         else:
             return False
+    def Fail(self):
+        if self.model1_positive_R2<self.model1_negative_R2 and self.model2_positive_R2<self.model2_negative_R2:
+            return True
+        else:
+            return False
