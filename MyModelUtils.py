@@ -127,12 +127,13 @@ class DataCleaner:
         "15:00:00",
     ]
 
-    def __init__(self, df):
+    def __init__(self, df, security_codes):
         """df是数据"""
         self.df = df
         self.df["date"] = pd.to_datetime(self.df["date"])
         self.start_date = self.df["date"][0]
         self.end_date = self.df["date"][-1]
+        self.security = security_codes
         self.r1, self.r2, self.r3, self.r4, self.r5, self.r6, self.r7, self.r8 = (
             [],
             [],
@@ -158,7 +159,7 @@ class DataCleaner:
         """删除ST股票/退市股票"""
         """目前函数只在平台上API可用(get_extras)"""
         names_to_drop = []
-        for name in self.df["name"]:
+        for name in self.security:
             st_df = get_extras(
                 "is_st", name, start_date=self.start_date, end_date=self.end_date
             )
@@ -214,6 +215,72 @@ class DataCleaner:
 
     def getR8(self):
         return self.r8
+
+
+class WeightRestore:
+    """
+    对于某一支股票在一段时间内进行复权
+    Args:
+    security:股票代码
+    start_date:起始日期
+    end_date:终止日期
+    """
+
+    def __init__(self, security, start_date, end_date):
+        self.security = security
+        self.start_date = start_date
+        self.end_date = end_date
+
+    def getResult(self):
+        bars = get_bars(self.security, self.start_date, self.end_date, unit="1d")
+        close = bars["close"]
+        fq_factors = get_adj_factors(
+            self.security, self.start_date, self.end_date, fq="pre"
+        )
+
+        # print(fq_factors)
+        # 对收盘价做前复权
+        fq_close = self.calc_fq(close, fq_factors)
+        is_st = get_extras("is_st", self.security, self.start_date, self.end_date)
+        limit = get_limit_price(self.security, self.start_date, self.end_date)
+        dfs = [self.df, fq_close, is_st]
+        if type(limit) == pd.DataFrame and len(limit) > 0:
+            dfs.append(limit)
+        else:
+            print(f"没有查询到涨跌停数据：标的{self.security}, 长期停牌或已经退市")
+        df = pd.concat(dfs, sort=True, axis=1)
+        df.dropna(inplace=True)
+
+        # 删除st
+        df = df[df["is_st"] == False]
+
+        # 删除涨跌停
+        df = df[(df["close"] != df["up"]) & (df["close"] != df["down"])]
+        return df
+
+    def cal_fq(close, fq_factors):
+        """
+        获取复权[前复权]数据
+        :param close: 收盘价序列
+        :param fq_factors:  DataFrame类型: 复权因子序列
+        :return: Series类型, 复权后的收盘价序列
+        """
+
+        if type(fq_factors) == pd.DataFrame and len(fq_factors) > 0:
+            # 复权价 = 累计前复权因子 * 不复权价
+            factor = fq_factors["factor"]
+            df = pd.concat([close, factor], sort=True, axis=1)
+            # 只有除息日才有复权因子。除息日不需要复权, 所以把除息日的复权因子与除息日前一个交易日对齐。
+            df["factor"] = df["factor"].shift(-1)
+            # 使用除息日前一个交易日的复权因子, 填充该交易日之前的复权因子
+            df = df.fillna(method="bfill")
+            # 使用1填充,最近一个除息日、以及该除息日之后每个交易日的复权因子
+            df = df.fillna(value=1)
+            # 默认价格是np.float64类型，复权因子是float类型，计算前先做数据类型转换
+            df["fq_close"] = df["close"] * (df["factor"].apply(np.float64))
+            return df["fq_close"]
+        else:
+            return close.rename("fq_close")
 
 
 class SpecialData:
